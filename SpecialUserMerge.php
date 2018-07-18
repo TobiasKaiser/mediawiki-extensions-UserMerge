@@ -74,16 +74,20 @@ class SpecialUserMerge extends FormSpecialPage {
 	 */
 	public function validateOldUser( $val ) {
 		global $wgUserMergeProtectedGroups;
-		$oldUser = User::newFromName( $val );
-		if ( !$oldUser || $oldUser->getId() === 0 ) {
-			return 'usermerge-badolduser';
-		}
-		if ( $this->getUser()->getId() === $oldUser->getId() ) {
-			return [ 'usermerge-noselfdelete', $this->getUser()->getName() ];
-		}
-		if ( count( array_intersect( $oldUser->getGroups(), $wgUserMergeProtectedGroups ) ) ) {
-			return [ 'usermerge-protectedgroup', $oldUser->getName() ];
-		}
+        $oldUserArray = explode(",",$val);
+
+        foreach ($oldUserArray as &$oldUserName) {
+            $oldUser = User::newFromName( $oldUserName );
+            if ( !$oldUser || $oldUser->getId() === 0 ) {
+                return 'usermerge-badolduser';
+            }
+            if ( $this->getUser()->getId() === $oldUser->getId() ) {
+                return [ 'usermerge-noselfdelete', $this->getUser()->getName() ];
+            }
+            if ( count( array_intersect( $oldUser->getGroups(), $wgUserMergeProtectedGroups ) ) ) {
+                return [ 'usermerge-protectedgroup', $oldUser->getName() ];
+            }
+        }
 
 		return true;
 	}
@@ -118,55 +122,61 @@ class SpecialUserMerge extends FormSpecialPage {
 	 */
 	public function onSubmit( array $data ) {
 		global $wgUserMergeEnableDelete;
-		// Most of the data has been validated using callbacks
-		// still need to check if the users are different
-		$newUser = User::newFromName( $data['newuser'] );
-		// Handle "Anonymous" as a special case for user deletion
-		if ( $wgUserMergeEnableDelete && $data['newuser'] === 'Anonymous' ) {
-			$newUser->mId = 0;
-		}
+        
+        $oldUserArray = explode(",",$data['olduser']);
 
-		$oldUser = User::newFromName( $data['olduser'] );
-		if ( $newUser->getName() === $oldUser->getName() ) {
-			return Status::newFatal( 'usermerge-same-old-and-new-user' );
-		}
+        foreach ($oldUserArray as &$oldUserName) {
+            
+            // Most of the data has been validated using callbacks
+            // still need to check if the users are different
+            $newUser = User::newFromName( $data['newuser'] );
+            // Handle "Anonymous" as a special case for user deletion
+            if ( $wgUserMergeEnableDelete && $data['newuser'] === 'Anonymous' ) {
+                $newUser->mId = 0;
+            }
 
-		// Validation passed, let's merge the user now.
-		$um = new MergeUser( $oldUser, $newUser, new UserMergeLogger() );
-		$um->merge( $this->getUser(), __METHOD__ );
+            $oldUser = User::newFromName($oldUserName);
+            if ( $newUser->getName() === $oldUser->getName() ) {
+                return Status::newFatal( 'usermerge-same-old-and-new-user' );
+            }
 
-		$out = $this->getOutput();
+            // Validation passed, let's merge the user now.
+            $um = new MergeUser( $oldUser, $newUser, new UserMergeLogger() );
+            $um->merge( $this->getUser(), __METHOD__ );
 
-		$out->addWikiMsg(
-			'usermerge-success',
-			$oldUser->getName(), $oldUser->getId(),
-			$newUser->getName(), $newUser->getId()
-		);
+            $out = $this->getOutput();
 
-		if ( $data['delete'] ) {
-			$failed = $um->delete( $this->getUser(), [ $this, 'msg' ] );
-			$out->addWikiMsg(
-				'usermerge-userdeleted', $oldUser->getName(), $oldUser->getId()
-			);
+            $out->addWikiMsg(
+                'usermerge-success',
+                $oldUser->getName(), $oldUser->getId(),
+                $newUser->getName(), $newUser->getId()
+            );
 
-			if ( $failed ) {
-				// Output an error message for failed moves
-				$out->addHTML( Html::openElement( 'ul' ) );
-				$linkRenderer = $this->getLinkRenderer();
-				foreach ( $failed as $oldTitleText => $newTitle ) {
-					$oldTitle = Title::newFromText( $oldTitleText );
-					$out->addHTML(
-						Html::rawElement( 'li', [],
-							$this->msg( 'usermerge-page-unmoved' )->rawParams(
-								$linkRenderer->makeLink( $oldTitle ),
-								$linkRenderer->makeLink( $newTitle )
-							)->escaped()
-						)
-					);
-				}
-				$out->addHTML( Html::closeElement( 'ul' ) );
-			}
-		}
+            if ( $data['delete'] ) {
+                $failed = $um->delete( $this->getUser(), [ $this, 'msg' ] );
+                $out->addWikiMsg(
+                    'usermerge-userdeleted', $oldUser->getName(), $oldUser->getId()
+                );
+
+                if ( $failed ) {
+                    // Output an error message for failed moves
+                    $out->addHTML( Html::openElement( 'ul' ) );
+                    $linkRenderer = $this->getLinkRenderer();
+                    foreach ( $failed as $oldTitleText => $newTitle ) {
+                        $oldTitle = Title::newFromText( $oldTitleText );
+                        $out->addHTML(
+                            Html::rawElement( 'li', [],
+                                $this->msg( 'usermerge-page-unmoved' )->rawParams(
+                                    $linkRenderer->makeLink( $oldTitle ),
+                                    $linkRenderer->makeLink( $newTitle )
+                                )->escaped()
+                            )
+                        );
+                    }
+                    $out->addHTML( Html::closeElement( 'ul' ) );
+                }
+            }
+        }
 
 		return Status::newGood();
 	}
